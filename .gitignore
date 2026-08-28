@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------
+# NEVER commit: the identity map, or anything that could carry one
+# ---------------------------------------------------------------
+OUTPUT FILES/_private/
+**/_private/
+*sample_key*
+
+# The raw instrument corpus is read-only input and is not ours to publish
+INPUT FILES/
+
+# Large regenerable intermediates (rebuild with run/01..07)
+OUTPUT FILES/corpus/
+OUTPUT FILES/splat/
+OUTPUT FILES/ml/
+OUTPUT FILES/figures/
+OUTPUT FILES/tables/
+OUTPUT FILES/*.log
+OUTPUT FILES/_*.log
+
+# ...but the interactive graph is a deliverable worth shipping
+!OUTPUT FILES/graph/knowledge_graph.html
+
+# LaTeX build products
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.out
+paper/*.toc
+paper/*.log
+paper/b[0-9].log
+paper/build*.log
+paper/*.synctex.gz
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+.venv/
+
+# ad-hoc PDF page renders
+OUTPUT FILES/_pdfpage*.png

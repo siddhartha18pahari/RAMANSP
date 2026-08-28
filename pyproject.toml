@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ramansp"
+version = "0.1.0"
+description = "A reproducible cross-sample Raman workflow framework with a Spectral 3D Gaussian Splatting representation for hyperspectral maps"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Siddhartha Pahari" }]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
+    "networkx>=3.0",
+    "pandas>=2.0",
+    "pillow>=9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+# The GPU splatting backend (millions of Gaussians) needs a CUDA-enabled torch.
+# It is intentionally NOT a hard dependency; see ramansp/splatting/torch_backend.py
+torch = ["torch>=2.1"]
+
+[tool.setuptools.packages.find]
+include = ["ramansp*"]
+
+[tool.pytest.ini_options]
+testpaths = ["ramansp/tests"]
+addopts = "-q"
