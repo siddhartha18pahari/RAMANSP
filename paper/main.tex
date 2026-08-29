@@ -52,6 +52,8 @@
 \providecommand{\MLConfigAcc}{n/a}\providecommand{\MLConfigModel}{n/a}
 \providecommand{\MLConfigTrainMaps}{n/a}\providecommand{\MLConfigTestMaps}{n/a}
 \providecommand{\MLConfigClasses}{n/a}
+\providecommand{\MLSplatRho}{n/a}\providecommand{\MLSplatN}{n/a}
+\providecommand{\MLNoiseMult}{1.5}
 
 \newcommand{\ramansp}{\textsc{ramansp}}
 \newcommand{\code}[1]{\texttt{\small #1}}
@@ -98,10 +100,9 @@ flags \Ndupgroups{} groups of byte-identical duplicate exports. Across
 wavenumber channels to within \SplatResidNoiseMin{} to
 \SplatResidNoiseMax{} of each map's own measurement noise at
 \SplatComprMin{} to \SplatComprMax$\times$ compression, that is, essentially to
-the noise floor, discarding noise rather than encoding it. Benchmarks against
-Savitzky-Golay and PCA denoisers, and across \MLNmodels{} classifiers evaluated
-on map-level splits, place the framework alongside the standard chemometric
-toolkit rather than beside it. We report the failure modes we hit, including
+the noise floor, discarding noise rather than encoding it. We also benchmark against Savitzky-Golay and PCA
+denoisers and across \MLNmodels{} classifiers on map-level splits, reporting
+where the representation loses as well as where it wins. We report the failure modes we hit, including
 one that lowered the loss while quietly corrupting the field, and specify the
 port to a tiled CUDA rasteriser for scaling to millions of primitives.
 \end{abstract}
@@ -969,17 +970,38 @@ signed-rank test over spectra against the best-performing Savitzky-Golay
 filter, with Benjamini-Hochberg correction for the resulting family of
 comparisons \cite{benjamini1995controlling}.
 
-Results are in Fig.~\ref{fig:mldenoise} and Table~\ref{tab:mldenoise}. Two
-points are worth drawing out. First, kernel width dominates: the shortest
-kernel is the best Savitzky-Golay filter here by a wide margin, and the longest
-is worse than doing nothing at all, because the carbon bands are narrow enough
-that a wide polynomial window removes signal along with noise. This is the
-preprocessing-sensitivity argument of \S\ref{sec:prep-variance} appearing again
-in a different guise, and it is why the comparison is run across a family of
-filters rather than against one arbitrarily chosen setting. Second, methods
-that exploit structure across spectra rather than only along the wavenumber
-axis do better than those that do not, which is the property the Gaussian field
-shares with PCA truncation.
+Every method sees the same corrupted map. In particular the two that pool
+information across spectra, PCA truncation and the Gaussian field, are fitted
+to the whole contaminated cube and then read back at the scored spectra, and
+the field is given the same primitive density the rest of this study uses
+rather than a reduced budget, so the comparison is of methods as deployed.
+
+Results are in Fig.~\ref{fig:mldenoise} and Table~\ref{tab:mldenoise}. The
+clearest effect is that kernel width dominates the Savitzky-Golay family: the
+shortest kernel is the best of them by a wide margin, and the longest is worse
+than leaving the data alone, because the carbon bands are narrow enough that a
+wide polynomial window removes signal along with noise. This is the
+preprocessing-sensitivity argument of \S\ref{sec:prep-variance} reappearing in
+a different guise, and it is why the comparison runs across a family of filters
+rather than against one arbitrarily chosen setting. Reporting against a single
+mid-range filter would have made every other method look better than it is.
+
+On this task the ranking does not favour our own representation, and we report
+it as measured. The best filter, \MLRefFilter{}, improves mean squared error
+over the untouched input by \MLDenoiseGain$	imes$; the Gaussian field does not
+beat the input at all on that metric. Raising its budget from a token
+allocation to \MLSplatRho{} primitives per 1000 voxels improved it but did not
+change the ordering, so this is a property of the model rather than of the
+budget it was given. A field fitted to a whole map optimises a global reconstruction
+under a sparsity prior; it is not optimised for per-spectrum fidelity at full
+spectral resolution, which is what MSE against individual spectra rewards and
+what a short Savitzky-Golay kernel is built to do. The complementary result of
+\S\ref{sec:results}, that the same field sits at or below the measurement noise
+floor when scored on withheld \emph{channels} of maps it was fitted to, is not
+in conflict: those are different questions, and a representation can be at the
+noise floor on the quantity it optimises while losing to a purpose-built filter
+on another. We draw the boundary explicitly rather than quoting only the
+favourable metric.
 
 \begin{table}[t]\centering\small
 \caption{Denoising benchmark. Lower is better throughout. Stars are
@@ -1187,9 +1209,18 @@ these materials.
 
 \paragraph{Scope of the noise-floor claim.}
 The claim that reconstruction reaches the measurement noise floor is specific
-to noise-limited data. On a nearly noise-free map the residual is dominated by
+to noise-limited data and to withheld \emph{channels} of a map the field was
+fitted to. On a nearly noise-free map the residual is dominated by
 representation error and the ratio exceeds one, correctly. The ratio is a
 diagnostic of what limits a given fit, not a score to be maximised.
+
+\paragraph{Not a general-purpose denoiser.}
+The benchmark of \S\ref{sec:benchmark} shows the field losing to a short
+Savitzky-Golay kernel on per-spectrum MSE at full spectral resolution. We
+report that because the opposite would have been easy to imply by choosing a
+different comparison. The representation is built for compact, queryable,
+interpretable reconstruction of a whole map, and it should be adopted for that
+rather than as a drop-in replacement for a smoothing filter.
 
 % ==================================================================
 \section{Future work}

@@ -126,6 +126,9 @@ def main():
             macros["MLDenoiseN"] = den.get("n_spectra", "n/a")
             macros["MLDenoiseMap"] = den.get("map", "n/a")
             macros["MLRefFilter"] = str(den.get("reference_filter", "n/a")).replace("_", " ")
+            macros["MLSplatRho"] = _num(den.get("splat_rho"), 0)
+            macros["MLSplatN"] = den.get("splat_n", "n/a")
+            macros["MLNoiseMult"] = "1.5"
             tbl = den.get("table", [])
             best = min((r for r in tbl if r["method"] != "input (noisy)"),
                        key=lambda r: r["MSE"], default=None)

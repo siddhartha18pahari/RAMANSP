@@ -125,28 +125,42 @@ def denoise_benchmark(man, n_spectra=1200, noise_mult=1.5):
     d = np.load(CORPUS / "arrays" / f"{aid}.npz")
     cube = d["cube"].astype(float)
     wn = d["wavenumber"].astype(float)
-    mask = d["particle_mask"].ravel()
-    target = cube.reshape(-1, wn.size)[mask]
-    if target.shape[0] > n_spectra:
-        target = target[RNG.choice(target.shape[0], n_spectra, replace=False)]
+    pmask2d = d["particle_mask"]
+    mask = pmask2d.ravel()
+    flat = cube.reshape(-1, wn.size)
 
+    # Contaminate *every* masked spectrum, not only those scored. A method that
+    # pools information across spectra must see the same corrupted map that a
+    # per-spectrum filter does, or the comparison is rigged in its favour.
     sigma = noise_mult * np.median(
-        np.std(np.diff(target, 2, axis=1), axis=1) / np.sqrt(6))
-    noisy = target + RNG.normal(0, sigma, target.shape)
+        np.std(np.diff(flat[mask], 2, axis=1), axis=1) / np.sqrt(6))
+    noisy_full = flat.copy()
+    noisy_full[mask] = flat[mask] + RNG.normal(0, sigma, flat[mask].shape)
+
+    idx_all = np.where(mask)[0]
+    score_idx = (RNG.choice(idx_all, n_spectra, replace=False)
+                 if idx_all.size > n_spectra else idx_all)
+    target = flat[score_idx]
+    noisy = noisy_full[score_idx]
 
     methods = {}
     for order, win in [(2, 5), (3, 9), (3, 15), (4, 15), (3, 21), (5, 25)]:
         methods[f"SG({order},{win})"] = savgol_filter(noisy, win, order, axis=1)
 
-    # PCA rank truncation at the Marchenko-Pastur edge
-    mu = noisy.mean(0)
-    U, S, Vt = np.linalg.svd(noisy - mu, full_matrices=False)
-    edge = sigma * (np.sqrt(noisy.shape[0]) + np.sqrt(noisy.shape[1]))
+    # PCA rank truncation at the Marchenko-Pastur edge, fitted on the whole
+    # corrupted map and then read back at the scored spectra
+    sub = noisy_full[mask]
+    mu = sub.mean(0)
+    U, S, Vt = np.linalg.svd(sub - mu, full_matrices=False)
+    edge = sigma * (np.sqrt(sub.shape[0]) + np.sqrt(sub.shape[1]))
     rank = max(int((S > edge).sum()), 1)
-    methods[f"PCA (rank {rank})"] = mu + (U[:, :rank] * S[:rank]) @ Vt[:rank]
+    basis = Vt[:rank]
+    proj = (noisy - mu) @ basis.T @ basis + mu
+    methods[f"PCA (rank {rank})"] = proj
 
-    # the fitted Gaussian field, used as a denoiser
-    splat_pred = splat_denoise(cube, wn, d["particle_mask"], noisy, mask, sigma)
+    # the fitted Gaussian field, used as a denoiser, at the same primitive
+    # density the paper's own fits use
+    splat_pred = splat_denoise(noisy_full, cube.shape, wn, pmask2d, score_idx)
     if splat_pred is not None:
         methods["S3DGS (ours)"] = splat_pred
 
@@ -187,31 +201,42 @@ def denoise_benchmark(man, n_spectra=1200, noise_mult=1.5):
     fig_denoise(wn, target, noisy, methods, per_spec, base, ref, tests, aid)
     return {"map": aid, "cnr": cnr, "reference_filter": ref,
             "added_noise_sd": float(sigma), "n_spectra": int(target.shape[0]),
+            "splat_rho": getattr(splat_denoise, "rho", None),
+            "splat_n": getattr(splat_denoise, "n_primitives", None),
             "table": rows, "tests": tests}
 
 
-def splat_denoise(cube, wn, pmask, noisy, mask_flat, sigma):
-    """Fit a field to the *noisy* cube and read it back at the same points."""
+def splat_denoise(noisy_flat, shape, wn, pmask, score_idx, per_1k_voxels=30.0):
+    """Fit a field to the corrupted cube and read it back at the scored points.
+
+    The primitive budget is set by the same density rule the rest of the study
+    uses, rather than a fixed count, so this is the method as deployed and not
+    a starved version of it.
+    """
     from ramansp.splatting import fit_image
     from ramansp.splatting.fit import SplatConfig
 
     try:
-        H, W, K = cube.shape
-        noisy_cube = cube.copy().reshape(-1, K)
-        idx = np.where(mask_flat)[0][:noisy.shape[0]]
-        noisy_cube[idx] = noisy
-        img = SpectralImage(noisy_cube.reshape(H, W, K), wn, {})
+        H, W, K = shape
+        img = SpectralImage(noisy_flat.reshape(H, W, K), wn, {})
+        vox = int(pmask.sum() * K)
+        n_g = int(np.clip(round(per_1k_voxels * vox / 1000), 800, 3400))
         cfg = SplatConfig(iters=110, channel_bin=1, hold_out=0,
-                          auto_gaussians=False, n_gaussians=1400,
-                          max_gaussians=2100, log_every=0)
+                          auto_gaussians=False, n_gaussians=n_g,
+                          max_gaussians=int(n_g * 1.4), log_every=0)
+        print(f"  S3DGS denoiser: {n_g} primitives over {vox} voxels "
+              f"({per_1k_voxels:.0f} per 1000) ...")
         field, vol, _ = fit_image(img, spatial_mask=pmask, config=cfg)
-        xa, ya, za = field.world_axes
+        splat_denoise.rho = round(1000 * field.n / max(vox, 1), 1)
+        splat_denoise.n_primitives = int(field.n)
+        xa, ya, _za = field.world_axes
         rec = field.render_grid((xa, ya, vol.z_train)) * vol.scale
         i0, i1, j0, j1 = vol.bbox
         full = np.full((H, W, vol.z_train.size), np.nan)
         full[i0:i1, j0:j1] = rec
-        out = full.reshape(-1, vol.z_train.size)[idx]
-        if out.shape[1] != noisy.shape[1] or not np.isfinite(out).all():
+        out = full.reshape(-1, vol.z_train.size)[score_idx]
+        if out.shape[1] != K or not np.isfinite(out).all():
+            print(f"  (S3DGS denoiser: shape {out.shape} unusable)")
             return None
         return out
     except Exception as e:  # noqa: BLE001
