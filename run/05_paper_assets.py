@@ -33,7 +33,12 @@ def main():
         shutil.rmtree(figdir)
     figdir.mkdir(parents=True, exist_ok=True)
     (PAPER / "tables").mkdir(parents=True, exist_ok=True)
-    for p in list(FIGS.glob("*.png")) + list(SPLAT.rglob("*.gif")) + list(SPLAT.rglob("*.png")):
+    # the PDFs are what the manuscript includes: vector text cannot be
+    # resampled below the journal's resolution floor. The PNGs travel with them
+    # for anyone assembling the figures outside LaTeX.
+    for p in (list(FIGS.glob("*.png")) + list(FIGS.glob("*.pdf"))
+              + list(SPLAT.rglob("*.gif")) + list(SPLAT.rglob("*.png"))
+              + list(SPLAT.rglob("*.pdf"))):
         shutil.copy(p, figdir / p.name)
 
     corpus = json.loads((CORPUS / "summary.json").read_text())
@@ -53,11 +58,11 @@ def main():
     # stable aliases so main.tex never hard-codes which acquisition is flagship
     fa = flagship.get("acq_id")
     if fa:
-        for src, dst in (("ellipsoids.png", "flagship_ellipsoids.png"),
-                         ("bands.png", "flagship_bands.png"),
-                         ("spectra.png", "flagship_spectra.png"),
-                         ("history.png", "flagship_history.png"),
-                         ("turntable.gif", "flagship_turntable.gif")):
+        aliases = [(f"{stem}.{ext}", f"flagship_{stem}.{ext}")
+                   for stem in ("ellipsoids", "bands", "spectra", "history")
+                   for ext in ("png", "pdf")]
+        aliases.append(("turntable.gif", "flagship_turntable.gif"))
+        for src, dst in aliases:
             p = SPLAT / fa / src
             if p.exists():
                 shutil.copy(p, figdir / dst)
@@ -66,6 +71,8 @@ def main():
         "Nacq": corpus["n_acquisitions"],
         "Nfittable": int((man.kind == "fit_table").sum()),
         "Nrawmap": int((man.kind == "raw_map").sum()),
+        "Nrawmaptext": int(((man.kind == "raw_map") &
+                            (man.source_format == "matrix_text")).sum()),
         "Nrawscan": int((man.kind == "raw_scan").sum()),
         "Nspecimen": corpus["n_specimens"],
         "Nconfig": corpus["n_configs"],
@@ -87,6 +94,11 @@ def main():
         "SplatCompression": _num(flagship.get("compression_ratio_full",
                                               flagship.get("compression_ratio"))),
         "SplatCompressionBinned": _num(flagship.get("compression_ratio")),
+        "SplatAniso": _num((flagship.get("ellipsoids") or {}).get("aniso_median"), 2),
+        "SplatAmpBands": _num(
+            100 * sum(((flagship.get("ellipsoids") or {}).get("amp_share") or {}).values()), 1),
+        "SplatBandSpan": _num(
+            100 * ((flagship.get("ellipsoids") or {}).get("band_span_frac") or float("nan")), 1),
         "SplatSeconds": _num(flagship.get("seconds"), 0),
         "SplatRawValues": flagship.get("raw_cube_values_full",
                                        flagship.get("raw_cube_values", "--")),
@@ -158,16 +170,46 @@ def main():
                 macros[f"ML{tag}TrainMaps"] = c.get("n_train_maps", "n/a")
                 macros[f"ML{tag}TestMaps"] = c.get("n_test_maps", "n/a")
                 macros[f"ML{tag}Classes"] = len(c.get("labels") or []) or "n/a"
+                # an accuracy without its baseline is not interpretable on an
+                # unbalanced task, so every reported score ships with one
+                b = (ml.get("baselines") or {}).get(c["task"], {})
+                if b:
+                    macros[f"ML{tag}Base"] = _num(100 * b["baseline"], 2)
+                    macros[f"ML{tag}Beat"] = b["n_beat"]
+                    macros[f"ML{tag}Lift"] = _num(
+                        100 * (b["best"] - b["baseline"]), 2)
+                    if b.get("n_classes_tested"):
+                        macros[f"ML{tag}ClassesTested"] = b["n_classes_tested"]
 
     figman = FIGS / "manifest.json"
     if figman.exists():
-        ab = (json.loads(figman.read_text()) or {}).get("preproc_ablation_disorder_median")
+        fm = json.loads(figman.read_text()) or {}
+        abl = fm.get("preproc_ablation") or {}
+        ab = abl.get("disorder_median") or fm.get("preproc_ablation_disorder_median")
         if ab:
             macros["AblMin"] = _num(min(ab.values()), 3)
             macros["AblMax"] = _num(max(ab.values()), 3)
             macros["AblSpread"] = _num(
                 100 * (max(ab.values()) - min(ab.values())) / max(min(ab.values()), 1e-9), 1)
             macros["AblNproto"] = len(ab)
+        sq = fm.get("splat_quality") or {}
+        ron = [v for v in (sq.get("resid_over_noise") or {}).values() if v == v]
+        if ron:
+            band = 20.0
+            macros["SplatFloorBand"] = _num(band, 0)
+            macros["SplatNatFloor"] = sum(1 for v in ron if v <= 1.0)
+            macros["SplatNnearFloor"] = sum(1 for v in ron if v <= 1 + band / 100)
+        if sq.get("psnr_snr_pearson_r") is not None:
+            macros["SplatPSNRSNRr"] = _num(sq["psnr_snr_pearson_r"], 2)
+            snrv = [v for v in (sq.get("snr") or {}).values() if v == v]
+            if snrv:
+                macros["SplatSNRmin"] = _num(min(snrv), 1)
+                macros["SplatSNRmax"] = _num(max(snrv), 1)
+        if abl:
+            macros["AblNmaps"] = abl.get("n_maps", "n/a")
+            macros["AblSpreadMedian"] = _num(abl.get("spread_pct_bounded_median"), 1)
+            macros["AblSpreadMax"] = _num(abl.get("spread_pct_bounded_max"), 1)
+            macros["AblSpreadRaw"] = _num(abl.get("spread_pct_rawdg_median"), 1)
     (PAPER / "values.tex").write_text(
         "% auto-generated by run/05_paper_assets.py -- do not edit\n"
         + "".join(f"\\newcommand{{\\{k}}}{{{v}}}\n" for k, v in macros.items())

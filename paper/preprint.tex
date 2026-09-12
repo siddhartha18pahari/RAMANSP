@@ -1,0 +1,86 @@
+% Preprint version, ordinary two-column article format.
+%
+%   powershell -ExecutionPolicy Bypass -File paper\build_preprint.ps1
+%
+% This is the same paper as main.tex. Only the document class and the markup of
+% the front and back matter differ: the body, abstract and the three closing
+% statements are shared files, so the preprint and the journal submission
+% cannot say different things. Use this one for a preprint server or for
+% circulating a readable copy; use main.tex for the ACS submission.
+\documentclass[10pt,twocolumn,twoside]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}
+\usepackage[margin=1.9cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{authblk}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{siunitx}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{abstract}
+\graphicspath{{figures/}}
+
+\renewcommand{\abstractnamefont}{\normalfont\bfseries}
+\renewcommand{\abstracttextfont}{\normalfont\small}
+\setlength{\absleftindent}{0pt}
+\setlength{\absrightindent}{0pt}
+
+% Numbers are emitted by run/05_paper_assets.py from the pipeline's own
+% outputs, so nothing quoted below is typed by hand.
+\IfFileExists{values.tex}{\input{values.tex}}{}
+\input{placeholders}
+
+\newcommand{\ramansp}{\textsc{ramansp}}
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+% achemso provides these; article does not.
+\providecommand{\alsoaffiliation}[1]{}
+\providecommand{\latin}[1]{#1}
+
+\title{\bfseries Reading the whole corpus: a reproducible cross-sample Raman
+workflow for materials characterisation, with a spectral 3D Gaussian splatting
+representation for hyperspectral maps}
+
+\author[1]{Siddhartha Pahari\thanks{Corresponding author:
+\texttt{siddhartha.pahari@mail.utoronto.ca}}}
+\author[2,3]{Jainish Shailesh Solanki}
+\affil[1]{Department of Chemical Engineering \& Applied Chemistry, University
+of Toronto, 200 College Street, Toronto, ON M5S 3E5, Canada}
+\affil[2]{Leslie Dan Faculty of Pharmacy, University of Toronto, 144 College
+Street, Toronto, ON M5S 3M2, Canada}
+\affil[3]{Department of Mechanical and Industrial Engineering, University of
+Toronto, 5 King's College Road, Toronto, ON M5S 3G8, Canada}
+\date{}
+
+\begin{document}
+\twocolumn[
+  \begin{@twocolumnfalse}
+  \maketitle
+  \begin{abstract}
+  \noindent\input{abstract}
+  \end{abstract}
+  \vspace{8pt}
+  \end{@twocolumnfalse}
+]
+
+\input{body}
+
+\section*{Acknowledgements}
+\input{ack}
+
+\section*{Data and Code Availability}
+\input{dataavail}
+
+\section*{Supporting Information}
+\input{suppinfo}
+
+\bibliographystyle{unsrtnat}
+\bibliography{refs}
+
+\end{document}

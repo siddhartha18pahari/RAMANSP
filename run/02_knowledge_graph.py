@@ -25,6 +25,7 @@ from _common import CORPUS, FIGS, GRAPH, TABLES, dump_json  # noqa: E402
 
 from ramansp import knowledge_graph as kg  # noqa: E402
 from ramansp import plotting  # noqa: E402
+from ramansp._style import acs_figsize, apply_style, save  # noqa: E402
 
 
 def main():
@@ -57,38 +58,82 @@ def main():
     pd.DataFrame(rows).to_csv(TABLES / "kg_communities.csv", index=False)
 
     # --- figure: the graph -----------------------------------------
-    fig, ax = plt.subplots(figsize=(11, 8))
+    apply_style()
+    fig, ax = plt.subplots(figsize=acs_figsize("double", 5.9))
+    fig.subplots_adjust(left=0.005, right=0.995, top=0.915, bottom=0.005)
     plotting.graph(G, ax=ax, community=out["comm_of"] or None)
-    ax.set_title(f"Raman cross-sample knowledge graph  "
-                 f"({out['n_nodes']} nodes, {out['n_edges']} edges, "
-                 f"{out['n_communities']} communities, Q={out['modularity']:.2f})",
-                 fontsize=10)
-    fig.savefig(FIGS / "kg_graph.png", dpi=320, bbox_inches="tight")
-    plt.close(fig)
+    n_em = sum(1 for n in G if G.nodes[n].get("ntype") == "endmember")
+    ax.set_title(f"Raman cross-sample knowledge graph: {out['n_nodes']} nodes, "
+                 f"{out['n_edges']} edges, {out['n_communities']} communities "
+                 f"(modularity Q = {out['modularity']:.2f}); acquisition colour is "
+                 f"community" + chr(10) +
+                 f"{n_em} endmember leaves and their edges are omitted "
+                 f"from the drawing only", fontsize=7.5)
+    save(fig, FIGS / "kg_graph.png")
 
     # --- figure: acquisition similarity heatmap -------------------
+    # Two things were wrong with the first version of this panel. The project
+    # style sheet draws a grid, and on an imshow that grid lands on top of the
+    # data as a white lattice over every cell. And the matrix silently mixes two
+    # different quantities: cosine between resampled spectra where both
+    # acquisitions have one, and cosine between z-scored tabular features
+    # otherwise. Those are not the same measurement, so which one produced each
+    # row is now marked rather than left for the reader to guess.
     acq = [r for r in records if r["kind"] in ("raw_map", "raw_scan", "fit_table")]
     specs = kg._resample_all(acq)
     Xz, _ = kg._feature_matrix(acq)
     n = len(acq)
     S = np.zeros((n, n))
+    spectral_pair = np.zeros((n, n), bool)
     for i in range(n):
         for j in range(n):
             if specs[i] is not None and specs[j] is not None:
                 S[i, j] = kg._cos(specs[i], specs[j])
+                spectral_pair[i, j] = True
             else:
                 S[i, j] = kg._cos(Xz[i], Xz[j])
-    order = np.argsort([r.get("features", {}).get("disorder_median", np.nan) for r in acq])
-    fig, ax = plt.subplots(figsize=(8, 7))
-    im = ax.imshow(S[np.ix_(order, order)], cmap="magma", vmin=0, vmax=1)
+    has_spec = np.array([s is not None for s in specs])
+
+    # order by community, then by disorder inside each, so the block structure
+    # the graph found is the structure the matrix shows
+    comm_of = out["comm_of"] or {}
+    dis = np.array([r.get("features", {}).get("disorder_median", np.nan) for r in acq],
+                   float)
+    key = [(comm_of.get(acq[i]["acq_id"], 10**6),
+            dis[i] if np.isfinite(dis[i]) else 10.0, i) for i in range(n)]
+    order = [i for _c, _d, i in sorted(key)]
+    csorted = [comm_of.get(acq[i]["acq_id"], None) for i in order]
+    bounds = [k for k in range(1, n) if csorted[k] != csorted[k - 1]]
+
+    fig, ax = plt.subplots(figsize=acs_figsize("double", 6.5),
+                           layout="constrained")
+    ax.grid(False)
+    im = ax.imshow(S[np.ix_(order, order)], cmap="magma", vmin=0, vmax=1,
+                   interpolation="nearest")
+    for b in bounds:
+        ax.axhline(b - 0.5, color="#6fd0ff", lw=0.7, alpha=0.85)
+        ax.axvline(b - 0.5, color="#6fd0ff", lw=0.7, alpha=0.85)
     ax.set_xticks(range(n)); ax.set_yticks(range(n))
-    ax.set_xticklabels([acq[o]["acq_id"].replace("acq-", "") for o in order], fontsize=5, rotation=90)
-    ax.set_yticklabels([acq[o]["acq_id"].replace("acq-", "") for o in order], fontsize=5)
-    ax.set_title("acquisition similarity (spectral where available, else tabular)\n"
-                 "ordered by disorder index", fontsize=9)
-    fig.colorbar(im, ax=ax, shrink=0.8)
-    fig.savefig(FIGS / "kg_similarity_heatmap.png", dpi=320, bbox_inches="tight")
-    plt.close(fig)
+    ax.set_xticklabels([acq[o]["acq_id"].replace("acq-", "") for o in order],
+                       fontsize=6.0, rotation=90)
+    ax.set_yticklabels([acq[o]["acq_id"].replace("acq-", "") for o in order],
+                       fontsize=6.0)
+    for t, o in zip(ax.get_yticklabels(), order):
+        t.set_color("#1a1a1a" if has_spec[o] else "#c1651f")
+    for t, o in zip(ax.get_xticklabels(), order):
+        t.set_color("#1a1a1a" if has_spec[o] else "#c1651f")
+    n_spec = int(has_spec.sum())
+    ax.set_title("Acquisition similarity, ordered by graph community then by "
+                 "disorder index" + chr(10) +
+                 f"black labels ({n_spec}): cosine between resampled spectra.  "
+                 f"orange labels ({n - n_spec}): cosine between z-scored tabular "
+                 f"features" + chr(10) +
+                 "blue lines are community boundaries; a pair spanning the two "
+                 "label colours is scored on tabular features",
+                 fontsize=7.0)
+    cb = fig.colorbar(im, ax=ax, shrink=0.8, label="cosine similarity")
+    cb.ax.tick_params(labelsize=6.5)
+    save(fig, FIGS / "kg_similarity_heatmap.png")
 
     print(f"nodes={out['n_nodes']} edges={out['n_edges']} "
           f"communities={out['n_communities']} modularity={out['modularity']:.3f} "

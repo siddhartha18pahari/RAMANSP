@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ramansp &middot; cross-sample Raman workflow with spectral 3D Gaussian splatting</title>
+<meta name="description" content="An open framework for cross-sample Raman
+analysis: a reader for the undocumented vendor container, a knowledge graph
+across acquisitions, and a differentiable field of anisotropic ellipsoids that
+represents a hyperspectral map.">
+<style>
+  :root {
+    --ink: #15181c; --muted: #5d646e; --line: #e3e6ea; --bg: #ffffff;
+    --accent: #0072B2; --soft: #f6f8fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8ebef; --muted: #9aa3ae; --line: #262b31; --bg: #0f1216;
+      --accent: #56B4E9; --soft: #161b21;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 60rem; margin: 0 auto; padding: 0 1.25rem; }
+  header { border-bottom: 1px solid var(--line); padding: 3.5rem 0 2.5rem; }
+  h1 { font-size: 2.1rem; line-height: 1.2; margin: 0 0 .6rem; letter-spacing: -.02em; }
+  h1 span { color: var(--accent); }
+  .lede { font-size: 1.12rem; color: var(--muted); max-width: 46rem; margin: 0 0 1.5rem; }
+  .links a {
+    display: inline-block; margin: 0 .5rem .5rem 0; padding: .5rem .95rem;
+    border: 1px solid var(--line); border-radius: 7px; text-decoration: none;
+    color: var(--ink); font-size: .94rem; background: var(--soft);
+  }
+  .links a:hover { border-color: var(--accent); color: var(--accent); }
+  .links a.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  section { padding: 2.75rem 0; border-bottom: 1px solid var(--line); }
+  h2 { font-size: 1.25rem; margin: 0 0 1.1rem; letter-spacing: -.01em; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1rem; }
+  .stat { background: var(--soft); border: 1px solid var(--line); border-radius: 9px; padding: 1rem 1.1rem; }
+  .stat b { display: block; font-size: 1.75rem; line-height: 1.1; color: var(--accent); }
+  .stat span { display: block; color: var(--muted); font-size: .88rem; margin-top: .3rem; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }
+  .card {
+    display: block; padding: 1.1rem 1.2rem; border: 1px solid var(--line);
+    border-radius: 9px; text-decoration: none; color: var(--ink); background: var(--soft);
+  }
+  .card:hover { border-color: var(--accent); }
+  .card b { display: block; margin-bottom: .25rem; }
+  .card span { color: var(--muted); font-size: .9rem; }
+  .card.wide { grid-column: 1 / -1; }
+  figure { margin: 0 0 2rem; }
+  figure img {
+    width: 100%; height: auto; border: 1px solid var(--line);
+    border-radius: 8px; background: #fff;
+  }
+  figcaption { color: var(--muted); font-size: .9rem; margin-top: .55rem; }
+  figcaption b { color: var(--ink); }
+  p { max-width: 46rem; }
+  code {
+    background: var(--soft); border: 1px solid var(--line); border-radius: 4px;
+    padding: .1rem .35rem; font-size: .88em;
+  }
+  pre {
+    background: var(--soft); border: 1px solid var(--line); border-radius: 8px;
+    padding: 1rem; overflow-x: auto; font-size: .88rem;
+  }
+  pre code { background: none; border: 0; padding: 0; }
+  .muted { color: var(--muted); }
+  footer { padding: 2.5rem 0 4rem; color: var(--muted); font-size: .9rem; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>ramansp <span>&middot;</span> reading the whole corpus</h1>
+  <p class="lede">An open framework for cross-sample Raman analysis. It reads
+  the instrument's undocumented binary container directly, links every
+  acquisition in a study into one queryable graph, and represents a
+  hyperspectral map as a differentiable field of anisotropic
+  three-dimensional ellipsoids fitted on closed-form gradients, in NumPy, on a
+  CPU.</p>
+  <p class="links">
+    <a class="primary" href="papers/preprint.pdf">Read the preprint</a>
+    <a href="https://github.com/siddhartha18pahari/RAMANSP">Source on GitHub</a>
+    <a href="graph.html">Interactive graph</a>
+  </p>
+</header>
+
+<section>
+  <h2>At a glance</h2>
+  <div class="stats">
+      <div class="stat"><b>108</b><span>acquisitions in the anonymised corpus</span></div>
+      <div class="stat"><b>23</b><span>graph communities at Q = 0.65</span></div>
+      <div class="stat"><b>38&times;</b><span>compression, at the map&#x27;s own noise floor</span></div>
+      <div class="stat"><b>2,904</b><span>differentiable ellipsoids in the flagship field</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>The paper</h2>
+  <div class="cards">
+      <a class="card" href="papers/preprint.pdf"><b>Preprint</b><span>Ordinary two-column format. Start here.</span></a>
+      <a class="card" href="papers/main.pdf"><b>Journal manuscript</b><span>Analytical Chemistry submission format.</span></a>
+      <a class="card" href="papers/si.pdf"><b>Supporting Information</b><span>Per-map reconstructions and the full benchmark tables.</span></a>
+  </div>
+</section>
+
+<section>
+  <h2>The knowledge graph</h2>
+  <p>Provenance edges are true by construction and are drawn as a backbone.
+  Content edges have to be earned: spectral similarity by mutual
+  <i>k</i>-nearest neighbours rather than a fixed threshold, shared unmixing
+  endmembers, and disorder-metric proximity that carries the preprocessing
+  protocol it was computed under.</p>
+  <div class="cards">
+      <a class="card wide" href="graph.html"><b>Open the interactive graph</b><span>Every acquisition, its provenance and its earned content edges. Drag, zoom, and hover a node for its metadata.</span></a>
+  </div>
+</section>
+
+<section>
+  <h2>Figures</h2>
+      <figure>
+        <a href="figures/fig_workflow.png"><img src="figures/fig_workflow.png" alt="The pipeline" loading="lazy"></a>
+        <figcaption><b>The pipeline</b> From the instrument&#x27;s own bytes to the manuscript.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/fig_corpus.png"><img src="figures/fig_corpus.png" alt="The anonymised corpus" loading="lazy"></a>
+        <figcaption><b>The anonymised corpus</b> What is in it, and what reading the vendor binary unlocks.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/kg_graph.png"><img src="figures/kg_graph.png" alt="Cross-sample knowledge graph" loading="lazy"></a>
+        <figcaption><b>Cross-sample knowledge graph</b> Provenance backbone plus content edges earned from the data.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/kg_similarity_heatmap.png"><img src="figures/kg_similarity_heatmap.png" alt="Pairwise similarity" loading="lazy"></a>
+        <figcaption><b>Pairwise similarity</b> Why a fixed cosine threshold is not usable on this corpus.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/flagship_ellipsoids.png"><img src="figures/flagship_ellipsoids.png" alt="The fitted primitives" loading="lazy"></a>
+        <figcaption><b>The fitted primitives</b> Anisotropic ellipsoids in two spatial axes and wavenumber.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/flagship_bands.png"><img src="figures/flagship_bands.png" alt="Measured against reconstructed" loading="lazy"></a>
+        <figcaption><b>Measured against reconstructed</b> Both integrated the same way, on a shared colour scale.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/flagship_spectra.png"><img src="figures/flagship_spectra.png" alt="Withheld channels" loading="lazy"></a>
+        <figcaption><b>Withheld channels</b> The dots are wavenumbers the field never saw during fitting.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/fig_splat_quality.png"><img src="figures/fig_splat_quality.png" alt="What limits the fit" loading="lazy"></a>
+        <figcaption><b>What limits the fit</b> Held-out error against each map&#x27;s own measurement noise.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/fig_preproc_ablation.png"><img src="figures/fig_preproc_ablation.png" alt="Preprocessing dependence" loading="lazy"></a>
+        <figcaption><b>Preprocessing dependence</b> The bounded index survives the baseline choice; the raw ratio does not.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/fig_ml_denoise.png"><img src="figures/fig_ml_denoise.png" alt="Denoising benchmark" loading="lazy"></a>
+        <figcaption><b>Denoising benchmark</b> Reported where our own representation loses, as well as where it wins.</figcaption>
+      </figure>
+      <figure>
+        <a href="figures/fig_ml_benchmark.png"><img src="figures/fig_ml_benchmark.png" alt="Classifier benchmark" loading="lazy"></a>
+        <figcaption><b>Classifier benchmark</b> Every accuracy against its majority-class baseline.</figcaption>
+      </figure>
+</section>
+
+<section>
+  <h2>Run it</h2>
+  <pre><code>git clone https://github.com/siddhartha18pahari/RAMANSP.git
+cd RAMANSP
+pip install -e .
+pytest ramansp/tests -q
+
+python run/01_build_corpus.py     # ingest, anonymise, cache
+python run/02_knowledge_graph.py  # graph + interactive view
+python run/03_splat_fit.py        # fit the Gaussian field
+python run/04_figures.py          # cross-cutting figures</code></pre>
+  <p class="muted">The corpus is distributed in anonymised form only. The
+  identity map is withheld, and a gate fails the build on any surviving
+  identifier.</p>
+</section>
+
+<footer>
+  <p>Siddhartha Pahari and Jainish Shailesh Solanki, University of Toronto.
+  Source and issues at <a href="https://github.com/siddhartha18pahari/RAMANSP">https://github.com/siddhartha18pahari/RAMANSP</a>.
+  This page is at <a href="https://ramansp.vercel.app">https://ramansp.vercel.app</a>.</p>
+</footer>
+
+</div>
+</body>
+</html>

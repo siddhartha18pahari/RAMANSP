@@ -1,0 +1,27 @@
+% shared content, included by both main.tex and preprint.tex
+Raman mapping produces a hyperspectral cube, and turning that cube into numbers
+depends strongly on a chain of preprocessing choices. Two further problems
+appear once a laboratory holds many maps rather than one: the corpus is
+analysed one file at a time, and the analysable corpus is only the subset
+somebody remembered to export by hand from the instrument's proprietary
+format. We present \ramansp, a compact open framework providing typed spectral
+containers, composable preprocessing protocols and an analysis layer, and
+extend it in three directions. First, a direct reader for the undocumented
+Horiba LabSpec\,6 container, reverse engineered here and verified bit identical
+against the instrument's own text export, which removes the manual export step
+and takes this corpus from \Nrawmaptext{} usable map to \Nrawmap.
+Second, a cross-sample knowledge graph linking every acquisition by spectral
+similarity, shared unmixing endmembers and disorder-metric proximity, with each
+metric edge carrying the preprocessing protocol under which it was computed.
+Third, and as the main methodological contribution, spectral 3D Gaussian
+splatting: a map $V(x,y,\nu)$ is represented by a differentiable field of
+anisotropic ellipsoids, each localising a domain in the two spatial axes and a
+band along the wavenumber axis, fitted by first-order descent on closed-form
+gradients, entirely in NumPy on a CPU. On an anonymised corpus of \Nacq{}
+acquisitions the graph recovers \KGcommunities{} communities at modularity
+$Q=\KGmodularity$ and flags \Ndupgroups{} groups of byte-identical
+duplicates, and across \SplatNfits{} maps the field reconstructs held-out
+wavenumber channels to within \SplatResidNoiseMin{} to
+\SplatResidNoiseMax{} of each map's own measurement noise at
+\SplatComprMin{} to \SplatComprMax$\times$ compression, that is,
+essentially to the noise floor.

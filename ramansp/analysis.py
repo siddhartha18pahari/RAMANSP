@@ -178,19 +178,57 @@ def _otsu(values, n_bins=128):
     return float(centres[int(np.argmax(between))])
 
 
+def band_contrast(image: SpectralImage,
+                  band: tuple[float, float] = (1540.0, 1660.0),
+                  free: tuple[float, float] = (1700.0, 1790.0)) -> np.ndarray:
+    """Per-spectrum height of the carbon bands above a band-free window.
+
+    A shape measure, not a brightness one, so it survives normalisation and
+    says whether a spectrum actually carries Raman bands.
+    """
+    wn, flat = image.wavenumber, image.flat()
+    g = (wn >= band[0]) & (wn <= band[1])
+    f = (wn >= free[0]) & (wn <= free[1])
+    if g.sum() < 2:
+        return np.zeros(flat.shape[0])
+    base = flat[:, f].mean(1) if f.sum() >= 2 else flat.min(1)
+    return flat[:, g].mean(1) - base
+
+
 def detect_particle(image: SpectralImage) -> dict:
-    """Particle vs substrate by an Otsu split on log mean counts (a carbon
-    particle absorbs, so it is *darker* than a fluorescent substrate). No noise
-    estimate involved. Adapted from ``raman_spectra.detect_particle``.
+    """Split particle from substrate, then orient the split spectroscopically.
+
+    The intensity split is an Otsu threshold on log mean counts, which needs no
+    noise estimate and so avoids using the noise to define the mask that
+    defines the noise.
+
+    Which side is the particle is *not* assumed. The original specimen studied
+    on this corpus was a dark carbon grain on a bright fluorescent substrate,
+    and hard-coding that ("the particle is the darker side") silently selects
+    the substrate on any map where the contrast runs the other way, which does
+    happen here. The side carrying the carbon bands is chosen instead, by
+    comparing band contrast across the split, which is a spectroscopic
+    criterion rather than a photometric one.
     """
     total = image.flat().mean(1)
     pos = total > 0
     thr = _otsu(np.log10(total[pos])) if pos.any() else 0.0
-    mask = pos & (np.log10(np.clip(total, 1e-9, None)) < thr)
+    dark = pos & (np.log10(np.clip(total, 1e-9, None)) < thr)
+
+    contrast = band_contrast(image)
+    inverted = False
+    if dark.any() and (~dark).any():
+        if np.median(contrast[~dark]) > np.median(contrast[dark]):
+            dark = ~dark
+            inverted = True
+    mask = dark
     return {
         "mask": mask,
         "threshold_counts": float(10 ** thr),
         "frac_particle": float(mask.mean()),
+        "orientation_flipped": bool(inverted),
+        "band_contrast_particle": float(np.median(contrast[mask])) if mask.any() else float("nan"),
+        "band_contrast_substrate": float(np.median(contrast[~mask])) if (~mask).any() else float("nan"),
         "median_counts_particle": float(np.median(total[mask])) if mask.any() else float("nan"),
         "median_counts_substrate": float(np.median(total[~mask])) if (~mask).any() else float("nan"),
     }

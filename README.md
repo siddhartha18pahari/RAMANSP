@@ -1,5 +1,7 @@
 # ramansp
 
+[Companion site](https://ramansp.vercel.app) &middot; [Preprint](https://ramansp.vercel.app/papers/preprint.pdf) &middot; [Interactive knowledge graph](https://ramansp.vercel.app/graph.html)
+
 A small, reproducible **Raman workflow framework** for a multi-sample study,
 built in the spirit of [RamanSPy](https://ramanspy.readthedocs.io)
 (Georgiev *et al.*, *Anal. Chem.* 2024) and extended with three things a corpus
@@ -59,9 +61,16 @@ dmap  = field.render_band(1350.0, vol)        # D-band image, reconstructed from
 | `01_build_corpus.py` | read every machine-readable export, **anonymise**, cache | `corpus/`, `_private/sample_key.csv` |
 | `02_knowledge_graph.py` | build + analyse the cross-sample graph | `graph/`, `figures/kg_*` |
 | `03_splat_fit.py` | fit a Gaussian field to each raw map | `splat/<id>/`, `figures/splat_*` |
-| `04_figures.py` | corpus + preprocessing-ablation figures | `figures/` |
+| `04_figures.py` | corpus, ablation and reconstruction-quality figures | `figures/` |
 | `05_paper_assets.py` | copy figures, emit LaTeX macros/tables | `paper/figures/`, `paper/values.tex` |
+| `06_workflow_figure.py` | the pipeline diagram | `figures/fig_workflow.*` |
+| `07_ml_benchmark.py` | denoiser comparison + 30-model benchmark | `ml/`, `tables/`, `figures/fig_ml_*` |
+| `08_toc_graphic.py` | table-of-contents graphic at the journal's size | `figures/fig_toc.*` |
+| `09_acs_submission.py` | assemble the journal submission package | `ACS SUBMISSION/` |
+| `10_cover_letter_docx.py` | render the cover letter as Word | `paper/cover_letter.docx` |
+| `11_build_site.py` | build the static site published on Vercel | `web/` |
 | `check_anonymity.py` | safety gate, fails on any identifier leak | (exit code) |
+| `check_figures.py` | artwork gate: column widths, depth, resolution | (exit code) |
 
 `03_splat_fit.py --rescore` recomputes every metric from the saved fields
 without refitting, which turns an hour into seconds when a new measure is
@@ -139,6 +148,29 @@ single-column spectra, calibration spectra, and evenly-spaced `.spc`.
 
 ## The manuscript
 
-`paper/main.tex` + `paper/refs.bib`. It compiles standalone (placeholder
-numbers); run `05_paper_assets.py` to fill in the real values. Build on
-Overleaf, see `paper/README.md`.
+The paper exists in three renderings that share one source. The body, the
+abstract and the closing statements live in `paper/body.tex`,
+`paper/abstract.tex`, `paper/ack.tex`, `paper/dataavail.tex` and
+`paper/suppinfo.tex`; each driver adds only its own class and front matter, so
+the three cannot say different things.
+
+| driver | build | what it is |
+|---|---|---|
+| `paper/preprint.tex` | `paper/build_preprint.ps1` | ordinary two-column article, for a preprint server |
+| `paper/main.tex` | `paper/build.ps1` | Analytical Chemistry submission format (`achemso`) |
+| `paper/si.tex` | `paper/build_si.ps1` | Supporting Information |
+
+Every number in all three comes from `paper/values.tex`, which
+`05_paper_assets.py` writes from the pipeline's own outputs. Nothing quoted in
+the text is typed by hand, so the prose cannot drift from the artefacts.
+
+## The site
+
+`11_build_site.py` assembles `web/` from those same outputs: the landing page,
+the interactive knowledge graph, every figure at full resolution, and the three
+PDFs. It is deployed at <https://ramansp.vercel.app>.
+
+```bash
+python run/11_build_site.py
+vercel deploy --prod        # from the repository root
+```

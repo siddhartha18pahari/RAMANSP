@@ -20,6 +20,7 @@ import argparse
 import copy
 import json
 import sys
+import types
 
 import matplotlib
 import numpy as np
@@ -30,13 +31,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from _common import CORPUS, FIGS, SPLAT, dump_json  # noqa: E402
 
-from ramansp import analysis  # noqa: E402
 from ramansp.containers import SpectralImage  # noqa: E402
 from ramansp.splatting import fit_image  # noqa: E402
 from ramansp.splatting.fit import SplatConfig, reconstruction_report  # noqa: E402
 from ramansp.splatting.volume import build_volume  # noqa: E402
 from ramansp.splatting.render import (  # noqa: E402
-    band_triptych, plot_ellipsoids, spectra_panel, turntable_gif,
+    band_triptych, ellipsoid_panel, spectra_panel, turntable_gif,
 )
 
 
@@ -65,6 +65,54 @@ def pick_targets(n: int, max_budget: float = 1.5e6):
     # re-fitting the same experiment several times
     t = t.drop_duplicates(subset=["config"], keep="first")
     return list(t.acq_id[:n])
+
+
+def history_figure(hist, path, acq_id):
+    """Loss and held-out PSNR against iteration.
+
+    The gap that opens between the two PSNR curves is the substance of this
+    figure, not the convergence: the training channels keep improving while the
+    withheld ones stop, which is the optimiser reaching the point where the only
+    thing left to fit is that map's own noise. Annotating the plateau makes that
+    readable instead of leaving it as two lines.
+    """
+    from ramansp._style import OKABE, acs_figsize, apply_style, save
+    apply_style()
+
+    it = np.asarray(hist.iters, float)
+    tr = np.asarray(hist.train_psnr, float)
+    ev = np.asarray(hist.eval_psnr, float)
+
+    fig, ax = plt.subplots(1, 2, figsize=acs_figsize("double", 2.5))
+    ax[0].plot(it, hist.loss, "-o", ms=3.5, color=OKABE["blue"])
+    ax[0].set_yscale("log")
+    ax[0].set_xlabel("iteration"); ax[0].set_ylabel("masked squared error + priors")
+    ax[0].set_title("(a) the analytic-gradient fit converges", fontsize=8, loc="left")
+    ax[0].grid(alpha=0.35); ax[0].set_axisbelow(True)
+
+    ax[1].plot(it, tr, "-o", ms=3.5, color=OKABE["blue"], label="fitted channels")
+    ax[1].plot(it, ev, "-s", ms=3.5, color=OKABE["orange"], label="withheld channels")
+    if ev.size >= 3:
+        # first iteration within 0.2 dB of the final held-out value
+        near = np.flatnonzero(np.abs(ev - ev[-1]) <= 0.2)
+        if near.size:
+            k = int(near[0])
+            ax[1].axvline(it[k], color="#999999", ls=":", lw=1.1)
+            ax[1].annotate(f"withheld PSNR flat from iteration {int(it[k])}",
+                           xy=(it[k], ev[k]), xytext=(6, -26),
+                           textcoords="offset points", fontsize=7.5, color="0.35")
+        ax[1].annotate("", xy=(it[-1], tr[-1]), xytext=(it[-1], ev[-1]),
+                       arrowprops=dict(arrowstyle="<->", lw=0.9, color="0.45"))
+        ax[1].text(it[-1], 0.5 * (tr[-1] + ev[-1]), f"  {tr[-1] - ev[-1]:.1f} dB",
+                   fontsize=7.5, va="center", ha="right", color="0.35")
+    ax[1].set_xlabel("iteration"); ax[1].set_ylabel("PSNR (dB)")
+    ax[1].legend(fontsize=8, loc="lower right")
+    ax[1].set_title("(b) the gap is the noise the field declines to fit",
+                    fontsize=8, loc="left")
+    ax[1].grid(alpha=0.35); ax[1].set_axisbelow(True)
+    fig.suptitle(f"map {acq_id}", fontsize=7, color="0.4", y=1.02)
+    fig.tight_layout(pad=0.4, w_pad=1.1)
+    save(fig, path)
 
 
 def fit_one(acq_id: str, cfg: SplatConfig, make_gif: bool = True,
@@ -101,30 +149,21 @@ def fit_one(acq_id: str, cfg: SplatConfig, make_gif: bool = True,
     field.save(str(outdir / "field.npz"))
     dump_json(rep, outdir / "metrics.json")
 
-    # history
-    fig, ax = plt.subplots(1, 2, figsize=(9, 3.4))
-    ax[0].plot(hist.iters, hist.loss, "-o", ms=3); ax[0].set_yscale("log")
-    ax[0].set_xlabel("iteration"); ax[0].set_title("loss", fontsize=9)
-    ax[1].plot(hist.iters, hist.train_psnr, "-o", ms=3, label="train channels")
-    ax[1].plot(hist.iters, hist.eval_psnr, "-s", ms=3, label="held-out channels")
-    ax[1].set_xlabel("iteration"); ax[1].set_ylabel("PSNR (dB)")
-    ax[1].legend(fontsize=8); ax[1].set_title("reconstruction", fontsize=9)
-    fig.tight_layout(); fig.savefig(outdir / "history.png", dpi=320); plt.close(fig)
+    # the history is cheap to keep and impossible to recover from the field
+    # alone, so it is stored and the figure can be redrawn without refitting
+    dump_json({"iters": list(map(int, hist.iters)),
+               "loss": [float(x) for x in hist.loss],
+               "train_psnr": [float(x) for x in hist.train_psnr],
+               "eval_psnr": [float(x) for x in hist.eval_psnr]},
+              outdir / "history.json")
+    history_figure(hist, outdir / "history.png", acq_id)
 
-    # ellipsoids
-    fig = plt.figure(figsize=(6.5, 5.5))
-    axp = fig.add_subplot(111, projection="3d")
-    plot_ellipsoids(field, vol, ax=axp)
-    fig.savefig(outdir / "ellipsoids.png", dpi=320, bbox_inches="tight"); plt.close(fig)
+    # ellipsoids: the 3-D view plus the shape and band-placement statistics
+    rep["ellipsoids"] = ellipsoid_panel(field, vol, path=str(outdir / "ellipsoids.png"))
+    dump_json(rep, outdir / "metrics.json")
 
-    # measured vs reconstructed band maps
-    clean = SpectralImage(vol.V.transpose(0, 1, 2) * vol.scale, vol.wn_train, {})
-    ba = analysis.band_areas(clean)
-    H, W = vol.spatial_mask.shape
-    meas = {"D1 (1350)": np.where(vol.spatial_mask, ba["D1"].reshape(H, W), np.nan),
-            "G+D2 (1600)": np.where(vol.spatial_mask, ba["G+D2"].reshape(H, W), np.nan)}
-    band_triptych(field, vol, {"D1": meas["D1 (1350)"], "G+D2": meas["G+D2 (1600)"]},
-                  path=str(outdir / "bands.png"))
+    # measured vs reconstructed band maps, both integrated the same way
+    band_triptych(field, vol, path=str(outdir / "bands.png"))
 
     spectra_panel(field, vol, n=6, path=str(outdir / "spectra.png"))
     if make_gif:
@@ -141,6 +180,33 @@ def fit_one(acq_id: str, cfg: SplatConfig, make_gif: bool = True,
           f"{rep.get('psnr_eval_dB', float('nan')):.1f} dB | "
           f"compression x{rep['compression_ratio']:.1f} | {hist.seconds:.0f} s")
     return rep
+
+
+def refigure(cfg: SplatConfig):
+    """Redraw every figure from the saved fields, without refitting."""
+    from ramansp.splatting.model import GaussianField
+
+    for mp in sorted(SPLAT.glob("*/metrics.json")):
+        acq = mp.parent.name
+        arr = np.load(CORPUS / "arrays" / f"{acq}.npz")
+        img = SpectralImage(arr["cube"].astype(float), arr["wavenumber"].astype(float),
+                            {"acq_id": acq})
+        vol = build_volume(img, spatial_mask=arr.get("particle_mask"),
+                           hold_out=cfg.hold_out, channel_bin=cfg.channel_bin)
+        field = GaussianField.load(str(mp.parent / "field.npz"))
+        rep = json.loads(mp.read_text())
+        rep["ellipsoids"] = ellipsoid_panel(field, vol,
+                                            path=str(mp.parent / "ellipsoids.png"))
+        dump_json(rep, mp)
+        hp = mp.parent / "history.json"
+        if hp.exists():
+            h = json.loads(hp.read_text())
+            history_figure(types.SimpleNamespace(**h), mp.parent / "history.png", acq)
+        band_triptych(field, vol, path=str(mp.parent / "bands.png"))
+        spectra_panel(field, vol, n=6, path=str(mp.parent / "spectra.png"))
+        for name in ("ellipsoids.png", "bands.png"):
+            (FIGS / f"splat_{acq}_{name}").write_bytes((mp.parent / name).read_bytes())
+        print(f"  redrew {acq}")
 
 
 def rescore(cfg: SplatConfig):
@@ -193,6 +259,8 @@ def main():
     ap.add_argument("--no-gif", action="store_true")
     ap.add_argument("--rescore", action="store_true",
                     help="recompute metrics from saved fields, without refitting")
+    ap.add_argument("--refigure", action="store_true",
+                    help="redraw figures from saved fields, without refitting")
     args = ap.parse_args()
 
     cfg = SplatConfig()
@@ -217,6 +285,9 @@ def main():
 
     if args.rescore:
         rescore(cfg)
+        return
+    if args.refigure:
+        refigure(cfg)
         return
 
     print(f"targets: {targets}")

@@ -42,3 +42,17 @@ dist/
 
 # ad-hoc PDF page renders
 OUTPUT FILES/_pdfpage*.png
+
+# The submission package is assembled from paper/ and OUTPUT FILES/ by
+# run/09_acs_submission.py, so it is a 36 MB duplicate of tracked content
+ACS SUBMISSION/
+
+# LaTeX temporaries from the locked-output fallback, and pre-refactor backups
+paper/si_tmp.pdf
+paper/pp_tmp.*
+paper/*_backup.tex
+paper/pp_build*.log
+paper/si_build*.log
+
+# achemso writes these alongside the build
+paper/acs-*.bib
