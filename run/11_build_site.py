@@ -1,4 +1,4 @@
-"""Stage 11 -- assemble the static site published at ramansp.vercel.app.
+"""Stage 11 -- assemble the static site published at ramanspjs.vercel.app.
 
 The site is a landing page plus three things that are better on the web than in
 a PDF: the interactive knowledge graph, the figures at full resolution, and the
@@ -26,7 +26,7 @@ from _common import FIGS, GRAPH, OUTPUT, PAPER, ROOT, SPLAT  # noqa: E402
 # only the code and the paper.
 WEB = ROOT.parent / "RAMANSP SITE"
 GITHUB = "https://github.com/siddhartha18pahari/RAMANSP"
-SITE = "https://ramansp.vercel.app"
+SITE = "https://ramanspjs.vercel.app"
 
 FIGURES = [
     ("fig_workflow", "The pipeline",

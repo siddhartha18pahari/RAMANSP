@@ -1,6 +1,6 @@
 # ramansp
 
-[Companion site](https://ramansp.vercel.app) &middot; [Preprint](https://ramansp.vercel.app/papers/preprint.pdf) &middot; [Interactive knowledge graph](https://ramansp.vercel.app/graph.html)
+[Companion site](https://ramanspjs.vercel.app) &middot; [Preprint](https://ramanspjs.vercel.app/papers/preprint.pdf) &middot; [Interactive knowledge graph](https://ramanspjs.vercel.app/graph.html)
 
 A small, reproducible **Raman workflow framework** for a multi-sample study,
 built in the spirit of [RamanSPy](https://ramanspy.readthedocs.io)
@@ -168,7 +168,7 @@ the text is typed by hand, so the prose cannot drift from the artefacts.
 
 `11_build_site.py` assembles the landing page, the interactive knowledge graph,
 every figure at full resolution and the three PDFs from those same outputs. It
-is deployed at <https://ramansp.vercel.app>.
+is deployed at <https://ramanspjs.vercel.app>.
 
 The site is deliberately **not** part of this repository. It is built into a
 standalone folder beside it and deployed on its own, so the Vercel project and
