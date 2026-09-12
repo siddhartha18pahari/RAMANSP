@@ -40,6 +40,9 @@ def add_runs(par, text, highlight_placeholders=True):
     from docx.enum.text import WD_COLOR_INDEX
     from docx.shared import Pt
 
+    # a Markdown autolink is written <https://...>; Word has no such notation,
+    # so the angle brackets would print literally
+    text = re.sub(r"<(https?://[^>]+)>", r"\1", text)
     # normalise each line separately so that a hard break, carried here as a
     # newline, is not swallowed along with the wrapping whitespace
     text = "\n".join(" ".join(seg.split()) for seg in text.split("\n"))

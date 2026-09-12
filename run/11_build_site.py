@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import shutil
 import sys
 
@@ -104,10 +105,17 @@ def stat_cards(n):
 
 
 def main():
+    # Clear the generated content but keep anything hidden: `vercel link`
+    # writes .vercel/project.json here, and wiping the folder wholesale
+    # unlinks the deployment, so the next deploy tries to create a project
+    # named after this directory and fails on the space in the name.
     if WEB.exists():
-        shutil.rmtree(WEB)
-    (WEB / "figures").mkdir(parents=True)
-    (WEB / "papers").mkdir(parents=True)
+        for item in WEB.iterdir():
+            if item.name.startswith("."):
+                continue
+            shutil.rmtree(item) if item.is_dir() else item.unlink()
+    (WEB / "figures").mkdir(parents=True, exist_ok=True)
+    (WEB / "papers").mkdir(parents=True, exist_ok=True)
 
     for stem, _t, _c in FIGURES:
         for ext in ("png", "pdf"):
@@ -121,6 +129,14 @@ def main():
         if src.exists():
             shutil.copy(src, WEB / "papers" / name)
 
+    # the rotating view of the fitted field: a moving graphic that is data
+    turntable = None
+    for cand in sorted(SPLAT.glob("*/turntable.gif"),
+                       key=lambda q: q.stat().st_mtime, reverse=True):
+        shutil.copy(cand, WEB / "figures" / "turntable.gif")
+        turntable = "figures/turntable.gif"
+        break
+
     graph_src = GRAPH / "knowledge_graph.html"
     has_graph = graph_src.exists()
     if has_graph:
@@ -130,16 +146,18 @@ def main():
             shutil.copy(GRAPH / extra, WEB / extra)
 
     n = numbers()
-    cards = "\n".join(
-        f'      <div class="stat"><b>{v}</b><span>{html.escape(k)}</span></div>'
-        for v, k in stat_cards(n))
+    def card(v, k):
+        num = re.sub(r"[^0-9.]", "", v) or "0"
+        return (f'      <div class="stat reveal"><b data-to="{num}">{v}</b>'
+                f'<span>{html.escape(k)}</span></div>')
+    cards = "\n".join(card(v, k) for v, k in stat_cards(n))
     papers = "\n".join(
         f'      <a class="card" href="papers/{name}">'
         f'<b>{html.escape(title)}</b>'
         f'<span>{html.escape(desc)}</span></a>'
         for name, title, desc in PAPERS if (WEB / "papers" / name).exists())
     figs = "\n".join(
-        f'      <figure>\n'
+        f'      <figure class=\"reveal\">\n'
         f'        <a href="figures/{stem}.png">'
         f'<img src="figures/{stem}.png" alt="{html.escape(title)}" loading="lazy"></a>\n'
         f'        <figcaption><b>{html.escape(title)}</b> '
@@ -156,9 +174,18 @@ def main():
         '      <p class="muted">Run <code>python run/02_knowledge_graph.py</code> '
         'to generate the interactive graph.</p>')
 
+    hero = ('      <figure class="turntable reveal">\n'
+            f'        <img src="{turntable}" alt="The fitted Gaussian field, '
+            'rotating">\n'
+            '        <figcaption>The fitted field itself, rotating. Each '
+            'ellipsoid is a primitive with a position, three semi-axes and an '
+            'orientation, fitted on closed-form gradients. Colour marks the '
+            'carbon band its centre falls in.</figcaption>\n'
+            '      </figure>' if turntable else "")
     (WEB / "index.html").write_text(
         TEMPLATE.format(cards=cards, papers=papers, figures=figs,
-                        graph=graph_block, github=GITHUB, site=SITE),
+                        graph=graph_block, github=GITHUB, site=SITE,
+                        hero=hero),
         encoding="utf-8")
 
     # config sits inside the site folder, so `vercel deploy --prod` run from
@@ -177,7 +204,7 @@ def main():
     print(f"built {WEB}")
     print(f"  {len(list(WEB.rglob('*')))} files, {total / 1e6:.1f} MB")
     n_papers = papers.count("class=" + chr(34) + "card" + chr(34))
-    print(f"  {figs.count('<figure>')} figures, {n_papers} papers, "
+    print(f"  {figs.count('<figure')} figures, {n_papers} papers, "
           f"interactive graph: {'yes' if has_graph else 'no'}")
     return 0
 
@@ -192,106 +219,193 @@ TEMPLATE = """<!DOCTYPE html>
 analysis: a reader for the undocumented vendor container, a knowledge graph
 across acquisitions, and a differentiable field of anisotropic ellipsoids that
 represents a hyperspectral map.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='16' cy='16' rx='13' ry='6' transform='rotate(-25 16 16)' fill='%230072B2'/></svg>">
 <style>
   :root {{
-    --ink: #15181c; --muted: #5d646e; --line: #e3e6ea; --bg: #ffffff;
-    --accent: #0072B2; --soft: #f6f8fa;
+    --ink: #10141a; --muted: #5b6472; --line: #e4e8ee; --bg: #ffffff;
+    --accent: #0072B2; --accent2: #D55E00; --soft: #f6f8fb; --glow: rgba(0,114,178,.12);
   }}
   @media (prefers-color-scheme: dark) {{
     :root {{
-      --ink: #e8ebef; --muted: #9aa3ae; --line: #262b31; --bg: #0f1216;
-      --accent: #56B4E9; --soft: #161b21;
+      --ink: #e9edf3; --muted: #99a3b2; --line: #232a33; --bg: #0b0e13;
+      --accent: #56B4E9; --accent2: #E69F00; --soft: #12171e; --glow: rgba(86,180,233,.14);
     }}
   }}
   * {{ box-sizing: border-box; }}
+  html {{ scroll-behavior: smooth; }}
   body {{
     margin: 0; background: var(--bg); color: var(--ink);
     font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           Helvetica, Arial, sans-serif;
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
   }}
-  .wrap {{ max-width: 60rem; margin: 0 auto; padding: 0 1.25rem; }}
-  header {{ border-bottom: 1px solid var(--line); padding: 3.5rem 0 2.5rem; }}
-  h1 {{ font-size: 2.1rem; line-height: 1.2; margin: 0 0 .6rem; letter-spacing: -.02em; }}
-  h1 span {{ color: var(--accent); }}
-  .lede {{ font-size: 1.12rem; color: var(--muted); max-width: 46rem; margin: 0 0 1.5rem; }}
+  .wrap {{ max-width: 62rem; margin: 0 auto; padding: 0 1.35rem; }}
+
+  /* ---- sticky nav ---- */
+  nav {{
+    position: sticky; top: 0; z-index: 40; backdrop-filter: saturate(180%) blur(12px);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    border-bottom: 1px solid transparent; transition: border-color .25s;
+  }}
+  nav.stuck {{ border-bottom-color: var(--line); }}
+  nav .wrap {{ display: flex; align-items: center; gap: 1.25rem; height: 3.4rem; }}
+  nav b {{ font-size: .98rem; letter-spacing: -.01em; }}
+  nav b i {{ color: var(--accent); font-style: normal; }}
+  nav a {{ color: var(--muted); text-decoration: none; font-size: .9rem; }}
+  nav a:hover {{ color: var(--accent); }}
+  nav .spacer {{ margin-left: auto; }}
+  @media (max-width: 44rem) {{ nav .hide-sm {{ display: none; }} }}
+
+  /* ---- hero with the animated field ---- */
+  header {{ position: relative; padding: 4.5rem 0 3rem; overflow: hidden; }}
+  #field {{
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    z-index: 0; opacity: .85; pointer-events: none;
+  }}
+  header .wrap {{ position: relative; z-index: 1; }}
+  h1 {{
+    font-size: clamp(2rem, 5.2vw, 3.1rem); line-height: 1.08; margin: 0 0 .85rem;
+    letter-spacing: -.033em; font-weight: 700;
+  }}
+  h1 em {{
+    font-style: normal;
+    background: linear-gradient(92deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }}
+  .lede {{ font-size: 1.14rem; color: var(--muted); max-width: 43rem; margin: 0 0 1.7rem; }}
   .links a {{
-    display: inline-block; margin: 0 .5rem .5rem 0; padding: .5rem .95rem;
-    border: 1px solid var(--line); border-radius: 7px; text-decoration: none;
-    color: var(--ink); font-size: .94rem; background: var(--soft);
+    display: inline-flex; align-items: center; gap: .45rem; margin: 0 .55rem .6rem 0;
+    padding: .62rem 1.15rem; border: 1px solid var(--line); border-radius: 9px;
+    text-decoration: none; color: var(--ink); font-size: .95rem; background: var(--bg);
+    transition: transform .18s, box-shadow .18s, border-color .18s, color .18s;
   }}
-  .links a:hover {{ border-color: var(--accent); color: var(--accent); }}
+  .links a:hover {{ transform: translateY(-2px); border-color: var(--accent);
+    color: var(--accent); box-shadow: 0 8px 22px var(--glow); }}
   .links a.primary {{ background: var(--accent); color: #fff; border-color: var(--accent); }}
-  section {{ padding: 2.75rem 0; border-bottom: 1px solid var(--line); }}
-  h2 {{ font-size: 1.25rem; margin: 0 0 1.1rem; letter-spacing: -.01em; }}
-  .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1rem; }}
-  .stat {{ background: var(--soft); border: 1px solid var(--line); border-radius: 9px; padding: 1rem 1.1rem; }}
-  .stat b {{ display: block; font-size: 1.75rem; line-height: 1.1; color: var(--accent); }}
-  .stat span {{ display: block; color: var(--muted); font-size: .88rem; margin-top: .3rem; }}
+  .links a.primary:hover {{ color: #fff; }}
+
+  section {{ padding: 3.25rem 0; border-top: 1px solid var(--line); }}
+  h2 {{ font-size: 1.32rem; margin: 0 0 1.2rem; letter-spacing: -.018em; }}
+  h2 span {{ color: var(--accent); font-weight: 400; }}
+
+  .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr)); gap: 1rem; }}
+  .stat {{
+    background: var(--soft); border: 1px solid var(--line); border-radius: 11px;
+    padding: 1.15rem 1.2rem; transition: transform .2s, box-shadow .2s;
+  }}
+  .stat:hover {{ transform: translateY(-3px); box-shadow: 0 10px 26px var(--glow); }}
+  .stat b {{
+    display: block; font-size: 2rem; line-height: 1.05; color: var(--accent);
+    font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+  }}
+  .stat span {{ display: block; color: var(--muted); font-size: .875rem; margin-top: .35rem; }}
+
   .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; }}
   .card {{
-    display: block; padding: 1.1rem 1.2rem; border: 1px solid var(--line);
-    border-radius: 9px; text-decoration: none; color: var(--ink); background: var(--soft);
+    display: block; padding: 1.15rem 1.25rem; border: 1px solid var(--line);
+    border-radius: 11px; text-decoration: none; color: var(--ink); background: var(--soft);
+    transition: transform .2s, box-shadow .2s, border-color .2s;
   }}
-  .card:hover {{ border-color: var(--accent); }}
-  .card b {{ display: block; margin-bottom: .25rem; }}
+  .card:hover {{ transform: translateY(-3px); border-color: var(--accent);
+    box-shadow: 0 10px 26px var(--glow); }}
+  .card b {{ display: block; margin-bottom: .3rem; }}
   .card span {{ color: var(--muted); font-size: .9rem; }}
   .card.wide {{ grid-column: 1 / -1; }}
-  figure {{ margin: 0 0 2rem; }}
+
+  figure {{ margin: 0 0 2.25rem; }}
   figure img {{
-    width: 100%; height: auto; border: 1px solid var(--line);
-    border-radius: 8px; background: #fff;
+    width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px;
+    background: #fff; transition: transform .3s, box-shadow .3s;
   }}
-  figcaption {{ color: var(--muted); font-size: .9rem; margin-top: .55rem; }}
+  figure a:hover img {{ transform: scale(1.012); box-shadow: 0 14px 34px var(--glow); }}
+  figcaption {{ color: var(--muted); font-size: .9rem; margin-top: .6rem; }}
   figcaption b {{ color: var(--ink); }}
-  p {{ max-width: 46rem; }}
+  .turntable {{ max-width: 30rem; margin: 0 auto 2.25rem; }}
+  .turntable img {{ background: #fff; }}
+
+  p {{ max-width: 44rem; }}
   code {{
-    background: var(--soft); border: 1px solid var(--line); border-radius: 4px;
-    padding: .1rem .35rem; font-size: .88em;
+    background: var(--soft); border: 1px solid var(--line); border-radius: 5px;
+    padding: .12rem .38rem; font-size: .88em;
   }}
   pre {{
-    background: var(--soft); border: 1px solid var(--line); border-radius: 8px;
-    padding: 1rem; overflow-x: auto; font-size: .88rem;
+    background: var(--soft); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem; overflow-x: auto; font-size: .87rem; line-height: 1.7;
   }}
   pre code {{ background: none; border: 0; padding: 0; }}
   .muted {{ color: var(--muted); }}
-  footer {{ padding: 2.5rem 0 4rem; color: var(--muted); font-size: .9rem; }}
+  footer {{ padding: 2.75rem 0 4.5rem; color: var(--muted); font-size: .9rem;
+    border-top: 1px solid var(--line); }}
   footer a {{ color: var(--accent); }}
+
+  /* ---- scroll reveal ----
+     Hidden only once the script has confirmed it is running. Hiding content in
+     the stylesheet and revealing it from JavaScript means any failure of the
+     observer leaves the page blank, which is exactly what happened the first
+     time this was written. */
+  html.js .reveal {{ opacity: 0; transform: translateY(14px);
+    transition: opacity .6s ease, transform .6s ease; }}
+  html.js .reveal.in {{ opacity: 1; transform: none; }}
+
+  @media (prefers-reduced-motion: reduce) {{
+    html {{ scroll-behavior: auto; }}
+    * {{ animation: none !important; transition: none !important; }}
+    .reveal {{ opacity: 1; transform: none; }}
+    #field {{ display: none; }}
+  }}
 </style>
 </head>
 <body>
-<div class="wrap">
+
+<nav id="nav"><div class="wrap">
+  <b>raman<i>sp</i></b>
+  <a href="#glance" class="hide-sm">Results</a>
+  <a href="#paper">Paper</a>
+  <a href="#graph" class="hide-sm">Graph</a>
+  <a href="#figures" class="hide-sm">Figures</a>
+  <a href="#run" class="hide-sm">Run it</a>
+  <span class="spacer"></span>
+  <a href="{github}">GitHub</a>
+</div></nav>
 
 <header>
-  <h1>ramansp <span>&middot;</span> reading the whole corpus</h1>
-  <p class="lede">An open framework for cross-sample Raman analysis. It reads
-  the instrument's undocumented binary container directly, links every
-  acquisition in a study into one queryable graph, and represents a
-  hyperspectral map as a differentiable field of anisotropic
-  three-dimensional ellipsoids fitted on closed-form gradients, in NumPy, on a
-  CPU.</p>
-  <p class="links">
-    <a class="primary" href="papers/preprint.pdf">Read the preprint</a>
-    <a href="{github}">Source on GitHub</a>
-    <a href="graph.html">Interactive graph</a>
-  </p>
+  <canvas id="field" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <h1>Reading the <em>whole corpus</em></h1>
+    <p class="lede">An open framework for cross-sample Raman analysis. It reads
+    the instrument's undocumented binary container directly, links every
+    acquisition in a study into one queryable graph, and represents a
+    hyperspectral map as a differentiable field of anisotropic
+    three-dimensional ellipsoids fitted on closed-form gradients, in NumPy, on
+    a CPU.</p>
+    <p class="links">
+      <a class="primary" href="papers/preprint.pdf">Read the preprint</a>
+      <a href="{github}">Source on GitHub</a>
+      <a href="graph.html">Interactive graph</a>
+    </p>
+  </div>
 </header>
 
-<section>
+<section id="glance"><div class="wrap">
   <h2>At a glance</h2>
   <div class="stats">
 {cards}
   </div>
-</section>
+</div></section>
 
-<section>
+<section id="field-section"><div class="wrap">
+  <h2>The representation <span>&middot; a field of ellipsoids</span></h2>
+{hero}
+</div></section>
+
+<section id="paper"><div class="wrap">
   <h2>The paper</h2>
   <div class="cards">
 {papers}
   </div>
-</section>
+</div></section>
 
-<section>
+<section id="graph"><div class="wrap">
   <h2>The knowledge graph</h2>
   <p>Provenance edges are true by construction and are drawn as a backbone.
   Content edges have to be earned: spectral similarity by mutual
@@ -301,14 +415,14 @@ represents a hyperspectral map.">
   <div class="cards">
 {graph}
   </div>
-</section>
+</div></section>
 
-<section>
+<section id="figures"><div class="wrap">
   <h2>Figures</h2>
 {figures}
-</section>
+</div></section>
 
-<section>
+<section id="run"><div class="wrap">
   <h2>Run it</h2>
   <pre><code>git clone {github}.git
 cd RAMANSP
@@ -322,15 +436,129 @@ python run/04_figures.py          # cross-cutting figures</code></pre>
   <p class="muted">The corpus is distributed in anonymised form only. The
   identity map is withheld, and a gate fails the build on any surviving
   identifier.</p>
-</section>
+</div></section>
 
-<footer>
+<footer><div class="wrap">
   <p>Siddhartha Pahari and Jainish Shailesh Solanki, University of Toronto.
   Source and issues at <a href="{github}">{github}</a>.
   This page is at <a href="{site}">{site}</a>.</p>
-</footer>
+</div></footer>
 
-</div>
+<script>
+(function () {{
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var items = document.querySelectorAll('.reveal');
+
+  function revealAll() {{
+    items.forEach(function (el) {{
+      el.classList.add('in');
+      var n = el.querySelector && el.querySelector('b[data-to]');
+      if (n && !n.dataset.done) {{ n.dataset.done = '1'; countUp(n); }}
+    }});
+  }}
+
+  /* only hide things if the observer is actually available and motion is
+     wanted; otherwise leave the page as the stylesheet renders it */
+  if (!reduce && 'IntersectionObserver' in window) {{
+    document.documentElement.classList.add('js');
+  }} else {{
+    setTimeout(revealAll, 0);
+  }}
+
+  /* failsafe: whatever happens, nothing stays invisible */
+  setTimeout(revealAll, 2500);
+
+  /* sticky nav hairline */
+  var nav = document.getElementById('nav');
+  addEventListener('scroll', function () {{
+    nav.classList.toggle('stuck', scrollY > 8);
+  }}, {{ passive: true }});
+
+  /* reveal on scroll, and count the stat numbers up once visible */
+  var io = new IntersectionObserver(function (entries) {{
+    entries.forEach(function (e) {{
+      if (!e.isIntersecting) return;
+      e.target.classList.add('in');
+      var num = e.target.querySelector && e.target.querySelector('b[data-to]');
+      if (num && !num.dataset.done) {{ num.dataset.done = '1'; countUp(num); }}
+      io.unobserve(e.target);
+    }});
+  }}, {{ rootMargin: '0px 0px -8% 0px' }});
+  items.forEach(function (el) {{ io.observe(el); }});
+
+  function countUp(el) {{
+    var target = parseFloat(el.dataset.to), raw = el.textContent;
+    /* Never animate in a background tab. requestAnimationFrame is throttled
+       there, so the first frame would replace the real number with 0 and leave
+       it stranded until the reader focuses the tab. */
+    if (reduce || document.hidden || !isFinite(target)) return;
+    var suffix = raw.replace(/[0-9.,]/g, ''), dec = (raw.split('.')[1] || '').length ? 1 : 0;
+    var fmt = function (v) {{
+      return (dec ? v.toFixed(1) : Math.round(v).toLocaleString()) + suffix;
+    }};
+    var t0 = performance.now(), dur = 1100, done = false;
+    function finish() {{ if (!done) {{ done = true; el.textContent = fmt(target); }} }}
+    setTimeout(finish, dur + 400);   /* the value always lands, frames or not */
+    (function step(t) {{
+      if (done) return;
+      var k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = fmt(target * e);
+      if (k < 1) requestAnimationFrame(step); else finish();
+    }})(t0);
+  }}
+
+  /* hero: anisotropic ellipsoids drifting, which is what the method fits */
+  var c = document.getElementById('field');
+  if (!c || reduce) return;
+  var ctx = c.getContext('2d'), dots = [], raf = null, w = 0, h = 0;
+  var accent = getComputedStyle(document.documentElement)
+                 .getPropertyValue('--accent').trim() || '#0072B2';
+  var accent2 = getComputedStyle(document.documentElement)
+                 .getPropertyValue('--accent2').trim() || '#D55E00';
+
+  function resize() {{
+    var r = c.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+    w = r.width; h = r.height;
+    c.width = w * dpr; c.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var n = Math.round(Math.min(46, Math.max(16, w / 26)));
+    dots = new Array(n).fill(0).map(function () {{
+      var band = Math.random();
+      return {{
+        x: Math.random() * w, y: Math.random() * h,
+        rx: 9 + Math.random() * 30, ry: 3 + Math.random() * 8,
+        a: Math.random() * Math.PI, da: (Math.random() - .5) * .0042,
+        vx: (Math.random() - .5) * .16, vy: (Math.random() - .5) * .16,
+        col: band < .62 ? accent : (band < .8 ? accent2 : '#9aa3ae'),
+        al: .05 + Math.random() * .14
+      }};
+    }});
+  }}
+
+  function frame() {{
+    ctx.clearRect(0, 0, w, h);
+    for (var i = 0; i < dots.length; i++) {{
+      var d = dots[i];
+      d.x += d.vx; d.y += d.vy; d.a += d.da;
+      if (d.x < -60) d.x = w + 60; if (d.x > w + 60) d.x = -60;
+      if (d.y < -40) d.y = h + 40; if (d.y > h + 40) d.y = -40;
+      ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.a);
+      ctx.beginPath(); ctx.ellipse(0, 0, d.rx, d.ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = d.col; ctx.globalAlpha = d.al; ctx.fill();
+      ctx.restore();
+    }}
+    raf = requestAnimationFrame(frame);
+  }}
+
+  addEventListener('resize', resize, {{ passive: true }});
+  document.addEventListener('visibilitychange', function () {{
+    if (document.hidden) {{ cancelAnimationFrame(raf); raf = null; }}
+    else if (!raf) raf = requestAnimationFrame(frame);
+  }});
+  resize(); frame();
+}})();
+</script>
+
 </body>
 </html>
 """
