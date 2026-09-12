@@ -166,11 +166,16 @@ the text is typed by hand, so the prose cannot drift from the artefacts.
 
 ## The site
 
-`11_build_site.py` assembles `web/` from those same outputs: the landing page,
-the interactive knowledge graph, every figure at full resolution, and the three
-PDFs. It is deployed at <https://ramansp.vercel.app>.
+`11_build_site.py` assembles the landing page, the interactive knowledge graph,
+every figure at full resolution and the three PDFs from those same outputs. It
+is deployed at <https://ramansp.vercel.app>.
+
+The site is deliberately **not** part of this repository. It is built into a
+standalone folder beside it and deployed on its own, so the Vercel project and
+this repository are independent: neither one triggers or depends on the other.
 
 ```bash
-python run/11_build_site.py
-vercel deploy --prod        # from the repository root
+python run/11_build_site.py      # writes ../RAMANSP SITE
+cd "../RAMANSP SITE"
+vercel deploy --prod
 ```

@@ -56,3 +56,8 @@ paper/si_build*.log
 
 # achemso writes these alongside the build
 paper/acs-*.bib
+
+# The site is deployed to Vercel on its own, from "RAMANSP SITE" beside this
+# repository, so it is not tracked here. Rebuild it with run/11_build_site.py
+web/
+vercel.json

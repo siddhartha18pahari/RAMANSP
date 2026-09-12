@@ -21,7 +21,10 @@ import sys
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 from _common import FIGS, GRAPH, OUTPUT, PAPER, ROOT, SPLAT  # noqa: E402
 
-WEB = ROOT / "web"
+# The site is deployed on its own, not from the repository, so it is built
+# outside the working tree: Vercel gets a standalone folder and GitHub gets
+# only the code and the paper.
+WEB = ROOT.parent / "RAMANSP SITE"
 GITHUB = "https://github.com/siddhartha18pahari/RAMANSP"
 SITE = "https://ramansp.vercel.app"
 
@@ -158,9 +161,10 @@ def main():
                         graph=graph_block, github=GITHUB, site=SITE),
         encoding="utf-8")
 
-    (ROOT / "vercel.json").write_text(json.dumps({
+    # config sits inside the site folder, so `vercel deploy --prod` run from
+    # there needs no outputDirectory indirection and no repository link
+    (WEB / "vercel.json").write_text(json.dumps({
         "$schema": "https://openapi.vercel.sh/vercel.json",
-        "outputDirectory": "web",
         "cleanUrls": True,
         "trailingSlash": False,
         "headers": [{
